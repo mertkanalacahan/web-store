@@ -168,4 +168,4 @@ if __name__ == '__main__':
     print("  GET /status  - All services status")
     print("=" * 50)
     
-    app.run(port=5030, debug=True)
+    app.run(port=5030, debug=True, use_reloader=False)
