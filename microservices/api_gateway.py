@@ -1,15 +1,18 @@
 # api_gateway.py
+from pathlib import Path
+
 from flask import Flask, request, jsonify, send_from_directory
 import requests
 
+if __package__:
+    from .service_discovery import discover_service_url
+else:
+    from service_discovery import discover_service_url
+
 app = Flask(__name__)
 
-# Service registry - maps service names to their URLs
-SERVICE_URLS = {
-    'users': 'http://127.0.0.1:5031',
-    'products': 'http://127.0.0.1:5032',
-    'orders': 'http://127.0.0.1:5033'
-}
+SERVICE_NAMES = ('users', 'products', 'orders')
+STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -23,14 +26,21 @@ def gateway(service, path):
     Routes requests to the appropriate microservice based on the service name.
     """
     # Check if the service exists
-    if service not in SERVICE_URLS:
+    if service not in SERVICE_NAMES:
         return jsonify({
             "error": "Service not found",
-            "available_services": list(SERVICE_URLS.keys())
+            "available_services": list(SERVICE_NAMES)
         }), 404
     
-    # Get the target service URL
-    service_url = SERVICE_URLS[service]
+    try:
+        service_url = discover_service_url(service)
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "Service registry timeout"}), 504
+    except requests.exceptions.RequestException:
+        return jsonify({"error": "Service registry unavailable"}), 503
+    except ValueError:
+        return jsonify({"error": "Service registry returned an invalid URL"}), 502
+
     target_url = f"{service_url}/{path}"
     
     # Prepare request data
@@ -91,18 +101,28 @@ def status():
     """
     service_status = {}
     
-    for service_name, service_url in SERVICE_URLS.items():
+    for service_name in SERVICE_NAMES:
         try:
+            service_url = discover_service_url(service_name)
             response = requests.get(f"{service_url}/health", timeout=2)
             service_status[service_name] = {
                 "status": "healthy" if response.status_code == 200 else "unhealthy",
                 "url": service_url,
                 "response_time_ms": response.elapsed.total_seconds() * 1000
             }
-        except Exception as e:
+        except requests.exceptions.Timeout as e:
             service_status[service_name] = {
                 "status": "unavailable",
-                "url": service_url,
+                "error": str(e)
+            }
+        except requests.exceptions.RequestException as e:
+            service_status[service_name] = {
+                "status": "unavailable",
+                "error": str(e)
+            }
+        except ValueError as e:
+            service_status[service_name] = {
+                "status": "unavailable",
                 "error": str(e)
             }
     
@@ -117,14 +137,14 @@ def status():
 # Serve the dashboard page
 @app.route('/')
 def dashboard():
-    return send_from_directory('static','index.html')
+    return send_from_directory(STATIC_DIRECTORY, 'index.html')
 
 @app.errorhandler(404)
 def not_found(e):
     return jsonify({
         "error": "Not found",
         "message": "The requested endpoint does not exist",
-        "available_services": list(SERVICE_URLS.keys())
+        "available_services": list(SERVICE_NAMES)
     }), 404
 
 @app.errorhandler(500)
@@ -140,8 +160,8 @@ if __name__ == '__main__':
     print(f"Gateway URL: http://127.0.0.1:5030")
     print("=" * 50)
     print("Registered services:")
-    for service, url in SERVICE_URLS.items():
-        print(f"  /{service}/* -> {url}")
+    for service in SERVICE_NAMES:
+        print(f"  /{service}/* -> service discovered from registry")
     print("=" * 50)
     print("Additional endpoints:")
     print("  GET /health  - Gateway health check")

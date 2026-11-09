@@ -549,29 +549,29 @@
         // Check service health
         async function checkServiceHealth() {
             const services = ['gateway', 'users', 'products', 'orders'];
-            const ports = { gateway: 5030, users: 5031, products: 5032, orders: 5033 };
+            try {
+                const response = await fetch(`${BASE_URL}/status`, {
+                    method: 'GET',
+                    signal: AbortSignal.timeout(5000)
+                });
+                const status = await response.json();
 
-            for (const service of services) {
-                const node = document.querySelector(`[data-service="${service}"]`);
-                const statusEl = node.querySelector('.service-status');
-
-                try {
-                    const response = await fetch(`http://127.0.0.1:${ports[service]}/health`, {
-                        method: 'GET',
-                        signal: AbortSignal.timeout(2000)
-                    });
-
-                    if (response.ok) {
-                        node.classList.add('healthy');
-                        node.classList.remove('unhealthy');
-                        statusEl.textContent = '● Online';
-                    } else {
-                        throw new Error('Unhealthy');
-                    }
-                } catch (error) {
+                for (const service of services) {
+                    const node = document.querySelector(`[data-service="${service}"]`);
+                    const statusEl = node.querySelector('.service-status');
+                    const isHealthy = service === 'gateway'
+                        ? status.gateway === 'healthy'
+                        : status.services?.[service]?.status === 'healthy';
+                    node.classList.toggle('healthy', isHealthy);
+                    node.classList.toggle('unhealthy', !isHealthy);
+                    statusEl.textContent = isHealthy ? '● Online' : '● Offline';
+                }
+            } catch (error) {
+                for (const service of services) {
+                    const node = document.querySelector(`[data-service="${service}"]`);
                     node.classList.add('unhealthy');
                     node.classList.remove('healthy');
-                    statusEl.textContent = '● Offline';
+                    node.querySelector('.service-status').textContent = '● Offline';
                 }
             }
         }

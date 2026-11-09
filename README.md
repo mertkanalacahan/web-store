@@ -281,3 +281,19 @@ def discover(service_name):
 if __name__ == '__main__':
     app.run(port=5100, debug=True)
 ```
+
+### Running the microservices
+
+Start each command in a separate terminal from the repository root, in this order:
+
+```powershell
+python -m microservices.service_registry
+python -m microservices.user_service
+python -m microservices.product_service
+python -m microservices.order_service
+python -m microservices.api_gateway
+```
+
+The services register with the registry at `http://127.0.0.1:5100` when they start. Start the registry first; if it is unavailable, the service reports the registration error instead of starting unregistered. The gateway and order service discover service URLs from the registry. Set `SERVICE_REGISTRY_URL` to use a registry at a different address; `USERS_SERVICE_URL`, `PRODUCTS_SERVICE_URL`, and `ORDERS_SERVICE_URL` control the URLs each service advertises.
+
+Each data-owning service creates its own SQLite database in the `microservices` directory on startup (`users.db`, `products.db`, and `orders.db`). User and product databases are seeded with the initial sample data only when their IDs are absent, so subsequent changes persist across restarts. Database paths can be overridden with `USERS_DATABASE`, `PRODUCTS_DATABASE`, and `ORDERS_DATABASE`.
